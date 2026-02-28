@@ -1,0 +1,272 @@
+#!/bin/bash
+
+TASK_FILE="$HOME/tasks.txt"
+
+# --------- تحضير الملف ---------
+if [[ ! -f "$TASK_FILE" ]]; then
+     touch "$TASK_FILE"
+fi
+
+# ------------------------------
+# Generate ID using tail
+generate_id() {
+    if [[ ! -s "$TASK_FILE" ]]; then
+        echo 1
+    else      
+        last_id=$(tail -n 1 "$TASK_FILE" | awk -F'|' '{print $1}')
+        echo $((last_id + 1))
+    fi
+}
+
+# ------------------------------
+# Validate date function
+validate_date() {
+    input="$1"
+    formatted=$(date -d "$input" "+%Y-%m-%d" 2>/dev/null)
+    if [ $? -ne 0 ]; then
+        echo "Error: Enter a valid date in YYYY-MM-DD format."
+        return 1
+    else
+        echo "$formatted"
+        return 0
+    fi
+}
+
+
+# ------------------------------
+# Print table
+print_table() {
+    awk -F'|' '
+    BEGIN{
+        printf "\n%-4s %-20s %-10s %-12s %-12s\n","ID","TITLE","PRIORITY","DATE","STATUS"
+        print "-----------------------------------------------------------"
+    }
+    { printf "%-4s %-20s %-10s %-12s %-12s\n",$1,$2,$3,$4,$5 }' "$TASK_FILE"
+}
+
+# ------------------------------
+# Add Task
+add_task() {
+    # TITLE
+    while true; do
+        read -p "Title: " title
+        title=$(echo "$title" | xargs)  # remove spaces
+
+        if [[ -z "$title" ]]; then
+            echo "Title cannot be empty"
+            continue
+        fi
+
+        if grep -iq "|$title|" "$TASK_FILE"; then
+            echo "Title already exists!"
+        else
+            break
+        fi
+    done
+
+    # PRIORITY
+    while true; do
+        echo "Priority: 1) high 2) medium 3) low"
+        read -p "Choice: " p
+        case $p in
+            1) priority="high"; break;;
+            2) priority="medium"; break;;
+            3) priority="low"; break;;
+            *) echo "Invalid choice";;
+        esac
+    done
+
+    # DATE
+    while true; do
+        read -p "Due Date (YYYY-MM-DD): " date_input
+        date_input=$(validate_date "$date_input") && break
+        echo "Invalid date!"
+    done
+
+    id=$(generate_id)
+    echo "$id|$title|$priority|$date_input|pending" >> "$TASK_FILE"
+    echo "Task Added ✔"
+}
+
+# ------------------------------
+# List Tasks
+list_tasks() {
+    echo "Filter Options: 1) All 2) By Status 3) By Priority"
+    read -p "Choose: " choice
+
+    case $choice in
+        1) print_table ;;
+        2)
+            echo "Status: 1) pending 2) in-progress 3) done"
+            read -p "Choice: " s
+            case $s in
+                1) status="pending";;
+                2) status="in-progress";;
+                3) status="done";;
+                *) echo "Invalid"; return;;
+            esac
+            print_table | awk -v s="$status" 'NR<=2 || $5==s'
+        ;;
+        3)
+            echo "Priority: 1) high 2) medium 3) low"
+            read -p "Choice: " p
+            case $p in
+                1) priority="high";;
+                2) priority="medium";;
+                3) priority="low";;
+                *) echo "Invalid"; return;;
+            esac
+            print_table | awk -v p="$priority" 'NR<=2 || $3==p'
+        ;;
+        *) echo "Invalid option";;
+    esac
+}
+
+# ------------------------------
+update_task() {
+    # CHECK ID
+    while true; do
+        read -p "Enter ID: " id
+        grep -q "^$id|" "$TASK_FILE" && break
+        echo "ID not found!"
+    done
+
+    # TITLE (بدون التحقق من التكرار)
+    while true; do
+        read -p "New Title: " title
+        title=$(echo "$title" | xargs)
+        [[ -z "$title" ]] && { echo "Title cannot be empty"; continue; }
+        break
+    done
+
+    # PRIORITY
+    while true; do
+        echo "Priority: 1) high 2) medium 3) low"
+        read -p "Choice: " p
+        case $p in
+            1) priority="high"; break;;
+            2) priority="medium"; break;;
+            3) priority="low"; break;;
+            *) echo "Invalid choice";;
+        esac
+    done
+
+    # DATE
+    while true; do
+        read -p "New Due Date (YYYY-MM-DD): " date_input
+        valid_date=$(validate_date "$date_input")
+        if [ $? -eq 0 ]; then
+            date_input="$valid_date"
+            break
+        fi
+        echo "Invalid date!"
+    done
+
+    # STATUS
+    while true; do
+        echo "Status: 1) pending 2) in-progress 3) done"
+        read -p "Choice: " s
+        case $s in
+            1) status="pending"; break;;
+            2) status="in-progress"; break;;
+            3) status="done"; break;;
+            *) echo "Invalid choice";;
+        esac
+    done
+
+    # استخدام separator # لتجنب مشاكل /
+    sed -i "s#^$id|.*#$id|$title|$priority|$date_input|$status#" "$TASK_FILE"
+    echo "Updated ✔"
+}
+# ------------------------------
+# Delete Task
+delete_task() {
+    while true; do
+        read -p "Enter ID: " id
+        grep -q "^$id|" "$TASK_FILE" && break
+        echo "ID not found!"
+    done
+
+    read -p "Are you sure? y/n: " c
+    [[ "$c" =~ ^[Yy]$ ]] && { sed -i "/^$id|/d" "$TASK_FILE"; echo "Deleted ✔"; } || echo "Cancelled"
+}
+
+# ------------------------------
+# Search Task
+search_task() {
+    read -p "Enter keyword to search: " key
+    [[ -z "$key" ]] && { echo "Keyword cannot be empty"; return; }
+    echo "ID|TITLE|PRIORITY|DATE|STATUS"
+    echo "-----------------------------"
+    grep -i "$key" "$TASK_FILE"
+}
+
+# ------------------------------
+# Reports
+task_summary() {
+    echo "Task Summary by Status:"
+    echo "Pending: $(grep -i "pending" "$TASK_FILE" | wc -l)"
+    echo "In-Progress: $(grep -i "in-progress" "$TASK_FILE" | wc -l)"
+    echo "Done: $(grep -i "done" "$TASK_FILE" | wc -l)"
+}
+
+
+
+overdue_tasks() {
+    today=$(date +%F)
+
+    echo "ID   TITLE                 PRIORITY   DATE         STATUS"
+    echo "-----------------------------------------------------------"
+
+    awk -F'|' -v t="$today" '
+    $4 != "" && $4 < t && $5 != "done" {
+        printf "%-4s %-20s %-10s %-12s %-12s\n", $1, $2, $3, $4, $5
+    }' "$TASK_FILE"
+}
+
+priority_report() {
+    for p in high medium low; do
+        echo "=== $p PRIORITY ==="
+        grep -i "|$p|" "$TASK_FILE"
+        echo ""
+    done
+}
+
+reports_menu() {
+    echo "1) Task Summary"
+    echo "2) Overdue Tasks"
+    echo "3) Priority Report"
+    read -p "Choice: " r
+    case $r in
+        1) task_summary ;;
+        2) overdue_tasks ;;
+        3) priority_report ;;
+        *) echo "Invalid option";;
+    esac
+}
+
+# ------------------------------
+# MAIN MENU
+while true; do
+    echo
+    echo "==== MINI TASK MANAGER ===="
+    echo "1) Add Task"
+    echo "2) List Tasks"
+    echo "3) Update Task"
+    echo "4) Delete Task"
+    echo "5) Search"
+    echo "6) Reports"
+    echo "7) Exit"
+
+    read -p "Choose: " c
+    case $c in
+        1) add_task ;;
+        2) list_tasks ;;
+        3) update_task ;;
+        4) delete_task ;;
+        5) search_task ;;
+        6) reports_menu ;;
+        7) exit ;;
+        *) echo "Invalid option" ;;
+    esac
+done
