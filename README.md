@@ -34,5 +34,5 @@ A simple **Bash-based task manager** to help you add, list, update, delete, sear
 1. Clone or download the script:  
 
 ```bash
-git clone <repository-url>
-cd <repository-folder>
+git clone https://github.com/ahmedrabe33/taskmanger.git
+cd taskmanger
